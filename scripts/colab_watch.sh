@@ -15,9 +15,18 @@ remote() { printf '%s\n' "$1" | "$C" exec -s "$S" --timeout 300 < /dev/stdin 2>&
 
 sync() {  # $1 = "light" (best.pt et last.pt inclus, pour pouvoir reprendre ailleurs) ou "full" (tout)
   local excl="--exclude=epoch*.pt"; [ "$1" = full ] && excl="--exclude=nothing"
-  remote "import subprocess; subprocess.run('mkdir -p /content/outputs && tar czf /content/outputs.tgz $excl -C /content outputs', shell=True)" > /dev/null
+  # les morceaux de caractéristiques (jusqu'à ~1 Go par modèle) sont rapatriés un par un, une seule fois
+  remote "import subprocess; subprocess.run('mkdir -p /content/outputs && tar czf /content/outputs.tgz $excl --exclude=feats_*.npy -C /content outputs', shell=True)" > /dev/null
   "$C" download -s "$S" /content/outputs.tgz outputs_colab/outputs.tgz < /dev/null > /dev/null 2>&1 \
     && tar xzf outputs_colab/outputs.tgz -C outputs_colab && rm -f outputs_colab/outputs.tgz
+  local f
+  for f in $(remote 'import glob; print("@@F@@"); print("\n".join(sorted(glob.glob("/content/outputs/features/*/feats_[0-9]*.npy"))))' \
+             | awk 'f; /@@F@@/{f=1}'); do
+    local dst="outputs_colab/${f#/content/}"
+    [ -f "$dst" ] && continue
+    mkdir -p "$(dirname "$dst")"
+    "$C" download -s "$S" "$f" "$dst.part" < /dev/null > /dev/null 2>&1 && mv "$dst.part" "$dst"
+  done
 }
 
 fails=0
@@ -25,7 +34,7 @@ while true; do
   log=$(remote 'import re
 print("@@LOG@@")
 s = open("/content/pipeline.log").read()
-keep = [l for l in re.split(r"[\r\n]", s) if l.startswith(("===", "epoch=", "  epoch", "Terminé", "Caract", "Sorties", "Reprise"))
+keep = [l for l in re.split(r"[\r\n]", s) if l.startswith(("===", "epoch=", "  epoch", "Terminé", "Caract", "Sorties", "Reprise", "Morceau", "Sonde"))
         or "Traceback" in l or "Error" in l or "patchs" in l]
 print("\n".join(keep[-12:]))')
   echo "----- $(date '+%H:%M:%S')"

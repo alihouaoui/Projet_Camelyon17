@@ -29,7 +29,7 @@ from sklearn.metrics import roc_auc_score
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from src.data import PatchDataset, assign_splits, load_data  # noqa: E402
+from src.data import PatchDataset, assign_splits, load_data, subsample  # noqa: E402
 from src.metrics import report, threshold_for_sensitivity  # noqa: E402
 from src.models import build_model  # noqa: E402
 from src.transforms import eval_transform, gpu_prepare, train_transform  # noqa: E402
@@ -65,14 +65,6 @@ def device():
     if torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
-
-
-def subsample(df, n, seed):
-    """Sous-échantillonne en gardant la proportion de chaque (lame, classe)."""
-    if n is None or len(df) <= n:
-        return df
-    return df.groupby(["slide_id", "label"], group_keys=False).apply(
-        lambda g: g.sample(max(1, int(round(n * len(g) / len(df)))), random_state=seed))
 
 
 def autocast(dev):

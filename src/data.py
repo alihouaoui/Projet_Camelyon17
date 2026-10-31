@@ -94,6 +94,14 @@ def assign_splits(df: pd.DataFrame, val_frac: float = 0.2, seed: int = 0) -> pd.
     return df
 
 
+def subsample(df: pd.DataFrame, n: int | None, seed: int = 0) -> pd.DataFrame:
+    """Sous-échantillonne en gardant la proportion de chaque (lame, classe)."""
+    if n is None or len(df) <= n:
+        return df
+    return df.groupby(["slide_id", "label"], group_keys=False).apply(
+        lambda g: g.sample(max(1, int(round(n * len(g) / len(df)))), random_state=seed))
+
+
 def check_no_leakage(df: pd.DataFrame) -> None:
     """Vérifie qu'aucune patiente n'apparaît dans deux splits."""
     per_patient = df.groupby("patient_id")["split"].nunique()

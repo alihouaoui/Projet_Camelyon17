@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Lance (ou relance après une coupure) la chaîne complète sur Colab depuis le Mac, via la CLI Colab officielle.
-#   bash scripts/colab_launch.sh [session]
+#   [STAGES="fm"] bash scripts/colab_launch.sh [session]
 # 1. crée une session GPU T4 si elle n'existe pas ;
 # 2. envoie le code, et les résultats déjà rapatriés dans outputs_colab/ (pour que `resume` reprenne) ;
 # 3. démarre scripts/colab_pipeline.sh en tâche de fond sur Colab.
 # Suivi ensuite avec scripts/colab_watch.sh.
 set -euo pipefail
 S=${1:-camelyon}
+STAGES=${STAGES:-classic cnn}
 C=${COLAB:-$HOME/.venvs/colab-cli/bin/colab}
 cd "$(dirname "$0")/.."
 TMP=$(mktemp -d)
@@ -23,15 +24,22 @@ COPYFILE_DISABLE=1 tar czf "$TMP/code.tgz" --exclude=data --exclude=outputs --ex
 "$C" upload -s "$S" "$TMP/code.tgz" /content/code.tgz < /dev/null
 remote 'import subprocess; subprocess.run("mkdir -p /content/Projet_Camelyon17 && tar xzf /content/code.tgz -C /content/Projet_Camelyon17", shell=True, check=True)'
 
-if [ -d outputs_colab/outputs ]; then
-  echo "Envoi des résultats déjà obtenus (reprise)..."
-  COPYFILE_DISABLE=1 tar czf "$TMP/outputs.tgz" -C outputs_colab outputs
+# pour la reprise, on renvoie seulement les résultats des étapes demandées
+prev=()
+if [[ " $STAGES " == *" classic "* || " $STAGES " == *" cnn "* ]]; then
+  [ -d outputs_colab/outputs ] && prev=(outputs)
+elif [[ " $STAGES " == *" fm "* ]]; then
+  prev=($(cd outputs_colab 2>/dev/null && ls -d outputs/features outputs/probe_* 2>/dev/null || true))
+fi
+if [ ${#prev[@]} -gt 0 ]; then
+  echo "Envoi des résultats déjà obtenus (reprise) : ${prev[*]}"
+  COPYFILE_DISABLE=1 tar czf "$TMP/outputs.tgz" -C outputs_colab "${prev[@]}"
   "$C" upload -s "$S" "$TMP/outputs.tgz" /content/outputs_prev.tgz < /dev/null
   remote 'import subprocess; subprocess.run("tar xzf /content/outputs_prev.tgz -C /content", shell=True, check=True)'
 fi
 rm -rf "$TMP"
 
 remote 'import subprocess
-subprocess.Popen("nohup bash scripts/colab_pipeline.sh >> /content/pipeline.log 2>&1 &", shell=True,
+subprocess.Popen("STAGES=\"'"$STAGES"'\" nohup bash scripts/colab_pipeline.sh >> /content/pipeline.log 2>&1 &", shell=True,
                  cwd="/content/Projet_Camelyon17", start_new_session=True)
 print("chaîne démarrée")'

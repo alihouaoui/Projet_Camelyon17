@@ -93,6 +93,54 @@ sur la présence de tumeur, pour que chaque centre d'entraînement y contribue.
 3. Choix de l'epoch sur val_ood (les checkpoints `epoch*.pt` sont gardés pour le faire a posteriori).
 4. Grad-CAM sur les faux négatifs de C2.
 
+## Semaine 2 — 31/10/2026 : modèles de fondation en pathologie (figés + sonde linéaire)
+
+**Question posée** : un modèle pré-entraîné sur de la pathologie rend-il le seuil transférable à un nouvel hôpital ?
+Plan critiqué au préalable par 5 relecteurs (pertinence, statistique, résolution, calcul, contamination).
+
+**Méthode** (`src/foundation.py`, `scripts/extract_features.py`, `scripts/linear_probe.py`, `scripts/compare.py`)
+- Modèles téléchargeables sans jeton, aucun pré-entraîné sur CAMELYON d'après leurs model cards : Phikon (ViT-B, TCGA),
+  Phikon-v2 (ViT-L, TCGA + CPTAC + GTEx), Midnight-12k (ViT-g, TCGA) ; contrôle : DINOv2-base (images naturelles).
+- Patchs 96×96 (~1 µm/pixel) agrandis à 224×224 ; caractéristiques figées (CLS ; CLS + moyenne pour Midnight).
+- Régression logistique. **Correction du défaut de val_id** : régularisation choisie par validation croisée groupée
+  par patiente (5 plis) sur les centres 0, 3, 4 ; seuil de sensibilité 95 % fixé sur les prédictions hors-pli.
+- Comparaison avec **IC 95 % par bootstrap des patientes** (mêmes tirages pour tous les modèles).
+- Calcul : Colab T4, ~2 h 30 (Phikon ~20 min, DINOv2 ~25 min, Phikon-v2 ~70 min, Midnight 25 img/s → 100 000 patchs).
+
+**Résultats sur l'hôpital de test C2** (9 patientes ; seuil appris sans C1 ni C2)
+
+| Modèle | AUC [IC 95 %] | Sensibilité [IC 95 %] | Spécificité | Tumeurs ratées |
+|---|---|---|---|---|
+| Petit CNN | 0,893 [0,74–0,94] | 0,82 [0,48–0,92] | 0,79 | 7 808 |
+| ResNet18 fine-tuné | 0,958 [0,89–0,98] | 0,69 [0,28–0,80] | 0,99 | 13 183 |
+| DINOv2 générique, figé | 0,977 [0,95–0,98] | 0,96 [0,90–0,97] | 0,86 | 1 792 |
+| Phikon, figé | 0,990 [0,97–0,99] | 0,98 [0,95–0,99] | 0,83 | 705 |
+| Phikon-v2, figé | 0,989 [0,96–1,00] | 0,97 [0,90–0,99] | 0,95 | 1 322 |
+| Midnight-12k, figé (100 k patchs) | **0,996** [0,99–1,00] | 0,96 [0,90–0,98] | **1,00** | 391 sur 18 655 patchs |
+
+Figure : `reports/figures/sensibilite_c2.png` ; tableau complet (C1 et C2) : `reports/comparaison_modeles.csv`.
+
+**Constats**
+1. **Oui, le seuil se transfère** avec les modèles de pathologie : réglé pour 95 % sur les hôpitaux d'entraînement,
+   il donne 95–98 % sur C1 et C2. Le ResNet18 tombe à 69 %, avec un IC de 28 à 80 % : très instable selon les patientes.
+2. Une simple régression logistique sur des caractéristiques figées bat le ResNet18 entraîné de bout en bout.
+3. Le pré-entraînement en pathologie compte : DINOv2 générique transfère aussi son seuil, mais avec une spécificité de 0,86.
+4. Entre Phikon, Phikon-v2 et Midnight, les IC se chevauchent : pas de vainqueur net sur la sensibilité.
+   Midnight a le meilleur compromis (AUC 0,996, quasi aucune fausse alerte).
+
+**Limites**
+- Le seuil du ResNet18 vient de val_id (5 patientes), celui des sondes de la validation croisée : la différence de règle
+  explique une partie de l'écart, pas tout (l'AUC des sondes est aussi meilleure).
+- C2 a été regardé pour 6 modèles : résultats descriptifs. Le modèle final doit être choisi sur la validation croisée et C1,
+  pas sur C2. Sur ces critères : Midnight (AUC hors-pli 0,996), puis Phikon / Phikon-v2 (0,991–0,993).
+- Midnight : sous-échantillon de 100 000 patchs, et régularisation choisie au bord de la grille (0,1) → grille à élargir.
+- Seulement 8–9 patientes par hôpital externe : IC larges, à rappeler à chaque comparaison.
+
+### Prochaines étapes
+1. **Stade pN par patiente** à partir des caractéristiques figées (priorité : c'est l'objectif final).
+2. Interprétabilité (cartes d'attention / Grad-CAM sur les faux négatifs) et section éthique.
+3. Facultatif : VLM en zéro exemple (PLIP, QuiltNet), HED sur le ResNet18 pour comparer « corriger la couleur » à « modèle robuste ».
+
 ### Questions pour l'enseignante
 1. Une cohorte réduite de lames complètes (~10 patientes) suffit-elle pour l'étape stade pN ?
 2. Un VAE (visualisation du changement de domaine) est-il bienvenu en complément ?
