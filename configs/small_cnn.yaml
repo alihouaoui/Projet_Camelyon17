@@ -1,0 +1,9 @@
+data: /content/data/full
+model: small_cnn
+pretrained: false
+epochs: 5
+batch_size: 256
+lr: 0.001
+num_workers: 2
+epoch_eval_max: 20000
+resume: true

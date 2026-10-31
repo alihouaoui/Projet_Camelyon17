@@ -1,0 +1,13 @@
+# Entraînement complet sur Colab (GPU T4). Données : dossier memmap construit par scripts/build_memmap.py
+data: /content/data/full
+model: resnet18
+pretrained: true
+epochs: 3            # le meilleur AUC hors domaine est atteint dès l epoch 1 (run du 31/10)
+batch_size: 256
+lr: 0.0003
+balance: none        # WILDS est ~équilibré ; weighted_loss / sampler testés en semaine 2
+hed: false           # semaine 2 : comparaison avec hed: true
+num_workers: 2       # Colab gratuit : 2 cœurs CPU
+epoch_eval_max: 20000
+target_sensitivity: 0.95
+resume: true

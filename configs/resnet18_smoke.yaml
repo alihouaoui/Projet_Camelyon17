@@ -1,0 +1,10 @@
+# Test rapide en local (CPU / MPS) sur le sous-échantillon : vérifie que la chaîne tourne.
+data: data/processed/subset.parquet   # ou data/subset_mm (format memmap)
+model: resnet18
+pretrained: true
+epochs: 2
+batch_size: 64
+lr: 0.0003
+max_train: 6000
+max_eval: 3000
+num_workers: 2

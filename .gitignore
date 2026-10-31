@@ -1,0 +1,7 @@
+data/
+outputs/
+*.pt
+__pycache__/
+.ipynb_checkpoints/
+.DS_Store
+outputs_colab/
