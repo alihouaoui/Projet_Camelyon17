@@ -197,10 +197,58 @@ Fichiers : `reports/pn_resume.csv`, `reports/pn_patients.csv`, figure `reports/f
 - Incidents traités : lames Philips sans balise de résolution (lue dans la description XML), une lame à 7 niveaux,
   mémoire GPU saturée sur les très grosses lames (réduction automatique du lot).
 
+## Semaine 2 (suite) — 01/11/2026 : ABMIL pour l'étape 2
+
+**Question posée** : un modèle multi-instances appris sur les caractéristiques Phikon fait-il mieux que la règle et la forêt ?
+Plan critiqué par 5 relecteurs (statistique, architecture, clinique, calcul, valeur pour le projet) puis **figé avant lancement**.
+
+**Constat clé des relecteurs** : l'attention fait une moyenne pondérée des tuiles, elle ne mesure ni taille ni forme ;
+elle ne peut donc pas, en principe, trancher micro (0,2–2 mm) contre macro (> 2 mm). D'où :
+- **Principal — ABMIL hybride** : ABMIL binaire (lame atteinte micro/macro ou non ; ITC compté négatif) décide
+  « atteinte ou pas » ; la taille vient de la carte de la sonde (règle apprise sur les plis d'entraînement) ;
+- **Secondaire — ABMIL 3 classes** (négative + ITC / micro / macro) direct, pour voir ce qu'il ne sait pas faire.
+
+**Méthode** (`scripts/pn_abmil.py`) : attention à porte (Ilse et al., 2018) réduite (768→128, ~110 k paramètres) ;
+entrée Phikon seule (ni coordonnées ni sonde) ; AdamW, 20 époques fixes, une graine, pas d'arrêt anticipé ;
+entraînement sur toutes les tuiles suspectes (sonde ≥ 0,3) + tirage jusqu'à 8 000 tuiles, inférence sur toutes ;
+**mêmes plis** que la règle et la forêt (recalculées dans la même boucle), 3 plis × 10 répétitions ;
+écart de kappa apparié par répétition, IC 95 % par bootstrap des patientes (1 000 tirages).
+Calcul : CPU du Mac, ~20 min par répétition (6 entraînements), 3 h 30 au total.
+
+**Résultats (57 patientes)**
+
+| Méthode | Kappa moyen (min–max) | pN exact | Métastatiques ratées* | Macro ratées* | Sur-stadification* |
+|---|---|---|---|---|---|
+| **ABMIL hybride** | **0,89** (0,86–0,93) | **79 %** | **4,4** | 2,1 | 1,5 |
+| ABMIL 3 classes | 0,87 (0,85–0,91) | 78 % | 5,1 | 1,3 | **1,2** |
+| Forêt aléatoire | 0,80 (0,76–0,87) | 69 % | 6,3 | **0,5** | 4,4 |
+| Règle de taille | 0,80 (0,77–0,83) | 69 % | 6,4 | 2,1 | 5,4 |
+
+\* moyenne sur les 10 répétitions, en nombre de patientes sur 57 ; « métastatiques ratées » = pN1mi/pN1/pN2 classées
+pN0 ou pN0(i+) ; « macro ratées » = pN1/pN2 classées en dessous de pN1 ; « sur-stadification » = pN0/pN0(i+) classées métastatiques.
+
+Écart de kappa [IC 95 %] : ABMIL hybride − règle **+0,09 [0,01 ; 0,18]** ; ABMIL hybride − forêt **+0,08 [0,01 ; 0,18]** ;
+ABMIL 3 classes − règle +0,07 [−0,00 ; 0,16] ; ABMIL 3 classes − forêt +0,07 [−0,00 ; 0,17].
+Fichiers : `reports/pn_abmil_resume.csv`, `reports/pn_abmil_ecarts.csv`.
+
+**Constats**
+1. L'ABMIL hybride est meilleur que la règle et la forêt **dans les 10 répétitions** ; l'IC de l'écart exclut 0,
+   mais sa borne basse est proche de 0 (57 patientes).
+2. Le gain vient de la **détection des petites métastases** (4,4 patientes métastatiques ratées au lieu de ~6,4) et de
+   **3 fois moins de fausses alertes**.
+3. Compromis : la forêt rate moins de macro-métastases (0,5 contre 2,1), l'erreur la plus grave cliniquement.
+4. Contrairement à l'attente des relecteurs, l'ABMIL 3 classes fait presque aussi bien (0,87) ; écart non démontré.
+   Le modèle principal reste l'hybride, choisi avant lancement.
+5. Toujours aucune ITC détectée ; 4 à 5 pN1mi restent classées pN0.
+
+**Limites** : une seule graine par pli ; hyperparamètres non réglés (choix volontaire) ; même cohorte de 57 patientes
+pour toutes les comparaisons (pas de test externe) ; l'attention (`outputs/pn_abmil/attention.npz`) n'est pas
+une explication causale.
+
 ### Prochaines étapes
-1. **Autres modèles pour l'étape 2** : ABMIL (attention multi-instances sur les caractéristiques Phikon des tuiles) ;
-   éventuellement un VLM de pathologie (CONCH) comme autre détecteur à l'étape 1. Critique par 5 relecteurs avant.
-2. Interprétabilité (cartes de chaleur, faux négatifs) et section éthique.
+1. Interprétabilité : cartes d'attention contre cartes de la sonde sur les pN1mi ratées ; section éthique
+   (outil d'aide à la relecture, coût asymétrique des erreurs, relecture humaine des lames négatives).
+2. Facultatif : VLM de pathologie (CONCH) comme autre détecteur à l'étape 1.
 3. Rapport (15 pages) et soutenance (10 min).
 
 ### Questions pour l'enseignante

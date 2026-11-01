@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from types import SimpleNamespace
 
 import matplotlib
 matplotlib.use("Agg")
@@ -91,20 +92,12 @@ def summary_features(hm, tile_mm) -> dict:
     return f
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--wsi", default="outputs/wsi")
-    ap.add_argument("--probe", default="outputs/probe_phikon_local/probe.npz")
-    ap.add_argument("--cohort", default="configs/pn_cohort.csv")
-    ap.add_argument("--out", default="outputs/pn")
-    ap.add_argument("--repeats", type=int, default=20)
-    args = ap.parse_args()
-    out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
-    probe = dict(np.load(args.probe))
-
-    cohort = pd.read_csv(args.cohort)
-    done = cohort[cohort.slide.map(lambda s: (Path(args.wsi) / s.replace(".tif", ".npz")).exists())]
+def prepare(wsi: str, probe_path: str, cohort_path: str) -> SimpleNamespace:
+    """Cartes, diamètres et résumés de toutes les lames, plus les briques de la validation croisée
+    (réutilisées par scripts/pn_abmil.py pour comparer sur exactement les mêmes plis)."""
+    probe = dict(np.load(probe_path))
+    cohort = pd.read_csv(cohort_path)
+    done = cohort[cohort.slide.map(lambda s: (Path(wsi) / s.replace(".tif", ".npz")).exists())]
     complete = done.groupby("pid").slide.count().eq(5)  # une patiente n'est utilisable qu'avec ses 5 lames
     slides = done[done.pid.isin(complete[complete].index)].reset_index(drop=True)
     pats = slides.drop_duplicates("pid").set_index("pid")[["center", "pn_stage"]]
@@ -113,7 +106,7 @@ def main():
     # diamètres pour toute la grille (t, m), et résumés pour la forêt
     diam, feats, maps = {}, [], {}
     for i, r in slides.iterrows():
-        hm, tile_mm, thumb = heatmap(Path(args.wsi) / r.slide.replace(".tif", ".npz"), probe)
+        hm, tile_mm, thumb = heatmap(Path(wsi) / r.slide.replace(".tif", ".npz"), probe)
         maps[r.slide] = (hm, thumb)
         for t in THRESHOLDS:
             for m in MIN_TILES:
@@ -145,14 +138,36 @@ def main():
     # validation croisée répétée, par patiente, stratifiée sur le stade pN
     strat = pats.pn_stage.replace({"pN2": "pN1"})  # pN2 trop rare pour 5 plis
     n_folds = int(min(5, strat.value_counts().min()))
+
+    def folds(rep):
+        for tr, te in StratifiedKFold(n_folds, shuffle=True, random_state=rep).split(pats.index, strat):
+            yield pats.index[tr], pats.index[te]
+
+    return SimpleNamespace(slides=slides, pats=pats, maps=maps, feat_cols=feat_cols, n_folds=n_folds, folds=folds,
+                           rule_slides=rule_slides, best_rule=best_rule, fit_forest=fit_forest)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--wsi", default="outputs/wsi")
+    ap.add_argument("--probe", default="outputs/probe_phikon_local/probe.npz")
+    ap.add_argument("--cohort", default="configs/pn_cohort.csv")
+    ap.add_argument("--out", default="outputs/pn")
+    ap.add_argument("--repeats", type=int, default=20)
+    args = ap.parse_args()
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    C = prepare(args.wsi, args.probe, args.cohort)
+    slides, pats, maps, feat_cols, n_folds = C.slides, C.pats, C.maps, C.feat_cols, C.n_folds
+    rule_slides, best_rule, fit_forest = C.rule_slides, C.best_rule, C.fit_forest
+
     rows, oof_last = [], None
     for rep in range(args.repeats):
         pred_rule = pd.Series(index=pats.index, dtype=object)
         pred_rf = pd.Series(index=pats.index, dtype=object)
         slide_rule = pd.Series(index=slides.index, dtype=object)
         slide_rf = pd.Series(index=slides.index, dtype=object)
-        for tr, te in StratifiedKFold(n_folds, shuffle=True, random_state=rep).split(pats.index, strat):
-            p_tr, p_te = pats.index[tr], pats.index[te]
+        for p_tr, p_te in C.folds(rep):
             sl_te = slides[slides.pid.isin(p_te)]
             t, m = best_rule(p_tr)
             slide_rule[sl_te.index] = rule_slides(sl_te.index, t, m)
