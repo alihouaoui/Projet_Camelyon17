@@ -9,7 +9,7 @@ Protocole (corrige la faiblesse de val_id : 5 patientes, tumeurs venant presque 
 - modèle final réentraîné sur tout dev, évalué sur C1 (val_ood) et C2 (test_ood).
 Le seuil réglé sur C1 et le seuil 0,5 sont rapportés à côté. C2 n'intervient dans aucun choix.
 
-Sorties dans <out>/probe_<modèle>/ : cv.csv, predictions.csv, metrics.csv (même format que train_cnn).
+Sorties dans <out>/probe_<modèle>/ : cv.csv, predictions.csv, metrics.csv (même format que train_cnn), probe.npz.
 """
 from __future__ import annotations
 
@@ -106,6 +106,8 @@ def main():
     best_wd = float(cv.loc[cv.auc_fold_mean.idxmax(), "wd"])
 
     lin = fit(Xd, yd, best_wd, dev, seed=args.seed)
+    # sonde finale, réutilisable sur d'autres tuiles (lames entières) : p = sigmoïde(((x - mu) / sd) @ w + b)
+    np.savez(out / "probe.npz", mu=mu, sd=sd, w=lin.weight.detach().cpu().numpy()[0], b=lin.bias.item())
     keep = ["image_id", "split", "center", "patient", "node", "slide_id", "x_coord", "y_coord", "label"]
     preds = df.loc[dev_mask, keep].assign(split="dev_oof", prob=oof_by_wd[best_wd])
     ext = df.loc[~dev_mask, keep].assign(prob=predict(lin, X[~dev_mask], dev))

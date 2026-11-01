@@ -2,7 +2,8 @@
 # Chaîne complète sur une machine Colab (lancée en tâche de fond, journal dans /content/pipeline.log).
 #   nohup bash scripts/colab_pipeline.sh > /content/pipeline.log 2>&1 &
 # Chaque étape déjà faite est sautée : on peut relancer le script après une coupure.
-# STAGES choisit les étapes (défaut « classic cnn ») ; « fm » = modèles de fondation figés + sonde linéaire.
+# STAGES choisit les étapes (défaut « classic cnn ») ; « fm » = modèles de fondation figés + sonde linéaire ;
+# « wsi » = caractéristiques Phikon des lames entières de la cohorte pN (lues à distance, sans les patchs WILDS).
 set -euo pipefail
 cd /content/Projet_Camelyon17
 OUT=${OUT:-/content/outputs}
@@ -15,7 +16,7 @@ step() { echo; echo "=== $(date '+%H:%M:%S') $* ==="; }
 step "dépendances"
 pip install -q scikit-image pyarrow pyyaml joblib
 
-if [ ! -f "$DATA/metadata.parquet" ]; then
+if { want classic || want cnn || want fm; } && [ ! -f "$DATA/metadata.parquet" ]; then
   step "téléchargement des 21 parquets (10,7 Go)"
   bash scripts/download_data.sh all /content/raw
   step "conversion en images.npy"
@@ -48,5 +49,11 @@ if want fm; then
       python -m scripts.linear_probe --features "$OUT/features/$m" --out "$OUT"
     fi
   done
+fi
+if want wsi; then
+  pip install -q -U "transformers>=4.56" tifffile imagecodecs fsspec aiohttp
+  step "lames entières (cohorte pN)"
+  # Colab part de la fin de la cohorte : le Mac peut traiter le début en parallèle
+  python -m scripts.wsi_features --cohort configs/pn_cohort.csv --out "$OUT/wsi" --reverse
 fi
 step "terminé"

@@ -28,6 +28,8 @@ remote 'import subprocess; subprocess.run("mkdir -p /content/Projet_Camelyon17 &
 prev=()
 if [[ " $STAGES " == *" classic "* || " $STAGES " == *" cnn "* ]]; then
   [ -d outputs_colab/outputs ] && prev=(outputs)
+elif [[ " $STAGES " == *" wsi "* ]]; then
+  prev=($(cd outputs_colab 2>/dev/null && ls -d outputs/wsi 2>/dev/null || true))
 elif [[ " $STAGES " == *" fm "* ]]; then
   prev=($(cd outputs_colab 2>/dev/null && ls -d outputs/features outputs/probe_* 2>/dev/null || true))
 fi

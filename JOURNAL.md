@@ -136,15 +136,73 @@ Figure : `reports/figures/sensibilite_c2.png` ; tableau complet (C1 et C2) : `re
 - Midnight : sous-échantillon de 100 000 patchs, et régularisation choisie au bord de la grille (0,1) → grille à élargir.
 - Seulement 8–9 patientes par hôpital externe : IC larges, à rappeler à chaque comparaison.
 
+## Semaine 2 (suite) — 01/11/2026 : stade pN par patiente
+
+**Question posée** : à partir du détecteur de patchs, peut-on donner le stade pN de patientes jamais vues ?
+Plan critiqué au préalable par 5 relecteurs (faisabilité ITC, taille des tuiles, vérité terrain, statistique, calcul).
+
+**Chaîne de décision** (le stade n'est pas « vu » par un modèle, il est construit comme le fait le pathologiste)
+1. **Carte de chaleur par ganglion** (`src/wsi.py`, `scripts/wsi_features.py`) : masque tissu (Otsu sur la saturation),
+   toutes les tuiles 96×96 du niveau 2 (~0,97 µm/pixel, ~93 µm par tuile, même échelle que WILDS), lues à distance
+   sur le bucket public AWS (requêtes HTTP Range, sans télécharger les lames de ~2 Go) ; Phikon figé + sonde de la semaine 2
+   → probabilité de tumeur par tuile.
+2. **Classe du ganglion** (négatif / ITC / micro / macro), deux méthodes comparées (`scripts/pn_stage.py`) :
+   - **règle de taille** : seuil t, taches d'au moins m tuiles, plus grand diamètre (Feret) en mm, seuils TNM
+     (ITC < 0,2 mm ≤ micro ≤ 2 mm < macro, non réglés) ; seuls t et m sont appris ;
+   - **forêt aléatoire** sur des résumés de la carte (probabilité max, nombre de tuiles suspectes, diamètres…).
+3. **Stade pN** : règles officielles du challenge à partir des 5 ganglions (pas de modèle).
+
+**Données** : `configs/pn_cohort.csv` (`scripts/pn_cohort.py`) — les **57 patientes de CAMELYON17 jamais vues par le
+détecteur** (les 43 patientes WILDS sont exclues), 285 lames (205 négatives, 43 macro, 27 micro, 10 ITC).
+Vérité : `stages.csv` officiel (taille évaluée par les pathologistes, avec IHC).
+Calcul : 285 lames, ~3 millions de tuiles ; Mac (MPS, ~8 lames/h) puis Colab T4 (~1 lame/min).
+
+**Évaluation** : validation croisée par patiente, stratifiée sur le stade, 3 plis × 20 répétitions (3 plis car seulement
+3 patientes pN0(i+)) ; métrique officielle : kappa pondéré quadratique.
+
+**Résultats (57 patientes)**
+
+| Méthode (étape 2) | Kappa moyen (min–max sur 20 répétitions) | Stade pN exact | Classe de ganglion exacte |
+|---|---|---|---|
+| Forêt aléatoire | **0,81** (0,75–0,87) | 70 % | 86 % |
+| Règle de taille | 0,79 (0,69–0,83) | 68 % | 87 % |
+
+Matrice de confusion pN (forêt aléatoire, dernière répétition ; lignes = vérité) :
+
+| | pN0 | pN0(i+) | pN1mi | pN1 | pN2 |
+|---|---|---|---|---|---|
+| pN0 (24) | 20 | 1 | 3 | 0 | 0 |
+| pN0(i+) (3) | 2 | 0 | 1 | 0 | 0 |
+| pN1mi (9) | 6 | 0 | 2 | 1 | 0 |
+| pN1 (14) | 0 | 0 | 0 | 13 | 1 |
+| pN2 (7) | 0 | 0 | 0 | 2 | 5 |
+
+Kappa par hôpital (forêt / règle) : C0 0,82 / 0,80 ; C1 0,78 / 0,57 ; C2 0,53 / 0,68 ; C3 0,92 / 0,79 ; C4 0,92 / 0,86
+(10 à 13 patientes par hôpital : très instable).
+Fichiers : `reports/pn_resume.csv`, `reports/pn_patients.csv`, figure `reports/figures/pn_cartes_exemples.png`
+(vrai positif, métastase ratée, fausse alerte).
+
+**Constats**
+1. Avec 57 patientes, les deux méthodes se valent (écart de kappa 0,02, dans la variabilité entre répétitions) ;
+   la règle de taille a l'avantage d'être explicable (elle reprend la définition médicale).
+2. Les cancers avancés sont bien classés (pN1 13/14, pN2 5/7 avec la forêt) ; les erreurs sont surtout d'un cran.
+3. **Point faible : les petites métastases** — 6 pN1mi sur 9 classées pN0 ; aucune ITC détectée (plus petites qu'une
+   tuile de 93 µm ; la meilleure équipe du challenge n'en trouvait que ~11 %).
+4. Repère : meilleure équipe du challenge 0,90 (500 patientes de test) — non comparable directement.
+
+**Limites**
+- 57 patientes : chiffres instables (kappa de 0,69 à 0,87 selon le découpage) ; par hôpital, encore plus.
+- Les réglages (t, m, forêt) sont choisis dans la validation croisée, pas sur un jeu de test séparé.
+- La vérité « taille » des pathologistes vient de l'IHC, que le modèle ne voit pas (H&E seulement).
+- Incidents traités : lames Philips sans balise de résolution (lue dans la description XML), une lame à 7 niveaux,
+  mémoire GPU saturée sur les très grosses lames (réduction automatique du lot).
+
 ### Prochaines étapes
-1. **Stade pN par patiente** à partir des caractéristiques figées (priorité : c'est l'objectif final).
-2. Interprétabilité (cartes d'attention / Grad-CAM sur les faux négatifs) et section éthique.
-3. Facultatif : VLM en zéro exemple (PLIP, QuiltNet), HED sur le ResNet18 pour comparer « corriger la couleur » à « modèle robuste ».
+1. **Autres modèles pour l'étape 2** : ABMIL (attention multi-instances sur les caractéristiques Phikon des tuiles) ;
+   éventuellement un VLM de pathologie (CONCH) comme autre détecteur à l'étape 1. Critique par 5 relecteurs avant.
+2. Interprétabilité (cartes de chaleur, faux négatifs) et section éthique.
+3. Rapport (15 pages) et soutenance (10 min).
 
 ### Questions pour l'enseignante
-1. Une cohorte réduite de lames complètes (~10 patientes) suffit-elle pour l'étape stade pN ?
-2. Un VAE (visualisation du changement de domaine) est-il bienvenu en complément ?
-3. Le test final sur le centre 2 doit-il rester intouché jusqu'au rapport, comme prévu ?
-
-### Prochaine étape (semaine 2)
-Voir « Priorités semaine 2 » ci-dessus ; en parallèle, téléchargement et découpage des lames complètes.
+1. Un VAE (visualisation du changement de domaine) est-il bienvenu en complément ?
+2. Le test final sur le centre 2 doit-il rester intouché jusqu'au rapport, comme prévu ?
