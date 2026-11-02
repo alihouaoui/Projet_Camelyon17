@@ -245,6 +245,49 @@ Fichiers : `reports/pn_abmil_resume.csv`, `reports/pn_abmil_ecarts.csv`.
 pour toutes les comparaisons (pas de test externe) ; l'attention (`outputs/pn_abmil/attention.npz`) n'est pas
 une explication causale.
 
+## Semaine 2 (suite) — 01-02/11/2026 : ensemble de graines et combinaison avec la forêt
+
+**Question posée** : peut-on améliorer l'ABMIL hybride (1) en moyennant 3 graines, (2) en récupérant les
+macro-métastases que la forêt détecte mieux ? Plan critiqué par 5 relecteurs puis figé (`scripts/pn_ensemble.py`) :
+- **Piste 1 (confirmatoire)** : 3 graines par pli, moyenne des probabilités, seuil 0,5. Comparaison principale fixée
+  d'avance : 3 graines − 1 graine, mêmes plis ;
+- **Piste 2 (exploratoire, idée née après les résultats)** : « OU » = macro si la forêt dit macro, sinon hybride ;
+  « ET » = macro si la forêt dit macro **et** l'ABMIL dit atteinte, sinon hybride ;
+- **Relecture humaine** : les patientes dont le stade diffère entre l'hybride et la forêt sont signalées.
+
+Calcul : 90 entraînements (3 plis × 10 répétitions × 3 graines), 6 processus en parallèle sur le CPU du Mac
+(`spawn` + cache en mmap, car `fork` se bloque avec torch sur macOS), 3 h 10 au total.
+Contrôle : la graine 0 redonne exactement les kappas de l'étape précédente (écart 0,0000).
+
+**Résultats (57 patientes, 3 plis × 10 répétitions)**
+
+| Méthode | Kappa moyen (min–max) | pN exact | Métastatiques ratées | Macro ratées | Sur-stadification |
+|---|---|---|---|---|---|
+| ABMIL hybride, 1 graine | 0,887 (0,857–0,932) | 79 % | 4,4 | 2,1 | 1,5 |
+| ABMIL hybride, 3 graines | 0,882 (0,857–0,896) | 78 % | 4,8 | 2,1 | 1,4 |
+| *Explo. OU forêt macro* | 0,866 (0,837–0,894) | 79 % | 4,1 | 0,3 | 2,4 |
+| ***Explo. ET forêt macro*** | **0,892 (0,881–0,910)** | **81 %** | 4,8 | **0,3** | **1,4** |
+| Forêt aléatoire | 0,804 (0,756–0,870) | 69 % | 6,3 | 0,5 | 4,4 |
+| Règle de taille | 0,801 (0,773–0,825) | 70 % | 6,4 | 2,1 | 5,4 |
+
+Écart de kappa [IC 95 %] :
+- **principal** : 3 graines − 1 graine **−0,005 [−0,016 ; 0,003]** ;
+- confirmatoires : 3 graines − règle +0,081 [0,007 ; 0,172] ; 3 graines − forêt +0,078 [0,003 ; 0,170] ;
+- exploratoires : OU − 3 graines −0,016 [−0,080 ; 0,025] ; ET − 3 graines +0,010 [0,002 ; 0,020].
+
+Fichiers : `reports/pn_ensemble_resume.csv`, `reports/pn_ensemble_ecarts.csv`.
+
+**Constats**
+1. **Résultat négatif** : moyenner 3 graines n'améliore pas le kappa ; cela réduit seulement la variabilité entre les répétitions.
+   On garde une graine (3 fois moins de calcul).
+2. « OU » rattrape les macro mais double la sur-stadification ; écarté.
+3. « ET » réduit les macro ratées de 2,1 à 0,3 sans fausse alerte supplémentaire, et donne le meilleur kappa.
+   **Exploratoire** : idée choisie après avoir vu les résultats, à confirmer sur des données indépendantes
+   (centre 2 ou autres patientes) avant d'en faire le modèle principal.
+4. Relecture humaine des désaccords : 12,7 patientes sur 57 (22 %) signalées en moyenne ; parmi les non
+   signalées, il reste 4,0 patientes métastatiques ratées et 0,3 macro ratée. La relecture rattrape presque toutes
+   les macro, **pas les micro-métastases**, qui restent la faiblesse principale.
+
 ### Prochaines étapes
 1. Interprétabilité : cartes d'attention contre cartes de la sonde sur les pN1mi ratées ; section éthique
    (outil d'aide à la relecture, coût asymétrique des erreurs, relecture humaine des lames négatives).

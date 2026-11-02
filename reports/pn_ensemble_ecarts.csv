@@ -1,0 +1,6 @@
+statut,comparaison,delta_kappa,ic_bas,ic_haut
+confirmatoire (primaire),ABMIL hybride 3 graines - ABMIL hybride 1 graine,-0.004936338135162232,-0.016424165356026133,0.0031952360417646488
+confirmatoire,ABMIL hybride 3 graines - règle de taille,0.08138044229110666,0.007279203291166855,0.17201258917367607
+confirmatoire,ABMIL hybride 3 graines - forêt aléatoire,0.07817175338772388,0.0030392897921250944,0.1701077982457147
+exploratoire,explo. OU forêt macro - ABMIL hybride 3 graines,-0.016400155216549406,-0.08031373214206311,0.02484894973422123
+exploratoire,explo. ET forêt macro - ABMIL hybride 3 graines,0.009983602747111676,0.002426907756454367,0.019608157488456398
