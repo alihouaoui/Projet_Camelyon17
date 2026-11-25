@@ -55,14 +55,14 @@
 \noindent Nous détectons les métastases du cancer du sein sur des lames de ganglions lymphatiques, puis en déduisons le
 \emph{stade pN} de chaque patiente, avec une contrainte centrale : le modèle doit rester fiable dans un \textbf{hôpital qu'il n'a
 jamais vu}. La question principale du rapport est la comparaison de deux approches : un \textbf{réseau de neurones convolutif (CNN)}
-entraîné pour la tâche (petit CNN appris de zéro et ResNet18 pré-entraîné sur ImageNet) et \textbf{Phikon}, un modèle de fondation
-de pathologie (Vision Transformer) utilisé figé, suivi d'une simple régression logistique. Sur les 455\,954 patchs de
-Camelyon17-WILDS (5 hôpitaux), découpés par patiente, le seuil de décision est fixé sur les hôpitaux d'entraînement (sensibilité
-95\,\%) puis appliqué tel quel aux hôpitaux 1 et 2. Les CNN sont excellents chez eux (AUC $\geq$ 0,99) mais, sur l'hôpital de test,
-le ResNet18 ne détecte que \textbf{69\,\%} des tumeurs et le petit CNN 82\,\% ; \textbf{Phikon en détecte 98\,\%} (AUC 0,990) et reste à
-98\,\% sur l'hôpital 1. L'exploration explique cet écart : la couleur seule identifie l'hôpital dans 80\,\% des cas, et les CNN se
-laissent piéger par la coloration. Une augmentation de couleur (HED) rapproche le petit CNN de Phikon (95\,\% sur l'hôpital 2,
-89\,\% sur l'hôpital 1) mais n'aide presque pas le ResNet18. Six autres modèles (références classiques, autres modèles de fondation)
+entraîné pour la tâche et \textbf{Phikon}, un modèle de fondation de pathologie (Vision Transformer) utilisé figé, suivi d'une simple
+régression logistique. Sur les 455\,954 patchs de Camelyon17-WILDS (5 hôpitaux), découpés par patiente, nous entraînons quatre CNN
+(petit CNN appris de zéro ou ResNet18 pré-entraîné, avec ou sans augmentation de couleur) et retenons le meilleur sur l'hôpital de
+validation : le \textbf{ResNet18 avec augmentation de couleur}. Le seuil de décision est fixé sur les hôpitaux d'entraînement
+(sensibilité 95\,\%) puis appliqué tel quel aux hôpitaux 1 et 2. Le CNN est excellent chez lui (AUC $\geq$ 0,99) mais, sur l'hôpital de
+test, il ne détecte que \textbf{72\,\%} des tumeurs ; \textbf{Phikon en détecte 98\,\%} (AUC 0,990), et 98\,\% aussi sur l'hôpital 1.
+L'exploration explique cet écart : la couleur seule identifie l'hôpital dans 80\,\% des cas, et les CNN se laissent piéger par la
+coloration. Six autres modèles (références classiques, autres modèles de fondation)
 complètent la comparaison. Avec Phikon, nous estimons enfin le stade pN de 57 patientes jamais vues : un modèle multi-instances à
 attention (ABMIL hybride) atteint un kappa de \textbf{0,89}, contre 0,80 pour une règle de taille et une forêt aléatoire. Nous
 discutons l'interprétabilité (Grad-CAM), le changement de domaine et les enjeux éthiques.
@@ -275,47 +275,66 @@ par lot sur le GPU (395 $\to$ 250\,s par époque), lecture partielle des lames �
 \section{Résultats — étape 1 : CNN contre Phikon}
 %=====================================================================
 
-\subsection{La comparaison principale}
+\subsection{Choix du meilleur CNN}
+Nous avons entraîné quatre CNN : les deux stratégies classiques (petit CNN appris de zéro, ResNet18 pré-entraîné sur ImageNet), chacune
+avec et sans augmentation de couleur HED (section~\ref{sec:hed}). Pour rester honnêtes, \textbf{le meilleur CNN est choisi sur l'hôpital 1}
+(validation hors domaine), à l'AUC comme pour le choix des époques, \textbf{jamais sur l'hôpital 2} qui sert de test.
+
 \begin{table}[H]
-\centering\footnotesize\setlength{\tabcolsep}{3.2pt}
+\centering\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{CNN (hôpital 1)} & \textbf{AUC} & \textbf{Sensibilité} & \textbf{Spécificité} \\
+\midrule
+Petit CNN & 0,912 & 0,90 & 0,72 \\
+Petit CNN + HED & 0,966 & 0,89 & 0,94 \\
+ResNet18 & 0,979 & 0,93 & 0,91 \\
+\rowcolor{bleuclair}\textbf{ResNet18 + HED (retenu)} & \best{0,985} & 0,88 & \best{0,99} \\
+\bottomrule
+\end{tabular}
+\caption{Sélection du CNN sur l'hôpital 1. Sur les hôpitaux d'entraînement (\texttt{val\_id}), les quatre ont une AUC de 0,98 à 0,997.}
+\label{tab:choixcnn}
+\end{table}
+
+\subsection{Meilleur CNN contre Phikon}
+\begin{table}[H]
+\centering\footnotesize\setlength{\tabcolsep}{2.2pt}
 \begin{tabular}{l|ccc|ccc|r}
 \toprule
  & \multicolumn{3}{c|}{\textbf{Hôpital 1 (inconnu, 8 patientes)}} & \multicolumn{3}{c|}{\textbf{Hôpital 2 (test, 9 patientes)}} & \\
-\textbf{Modèle} & \textbf{AUC} & \textbf{Sens.} & \textbf{Spéc.} & \textbf{AUC} & \textbf{Sens. [IC 95\,\%]} & \textbf{Spéc.} & \textbf{Ratées C2} \\
+\textbf{Modèle} & \textbf{AUC} & \textbf{Sens. [IC 95\,\%]} & \textbf{Spéc.} & \textbf{AUC} & \textbf{Sens. [IC 95\,\%]} & \textbf{Spéc.} & \textbf{Ratées C2} \\
 \midrule
-Petit CNN & 0,912 & 0,90 & 0,72 & 0,893 & 0,82 [0,48–0,92] & 0,79 & 7\,808 \\
-Petit CNN + HED & 0,966 & 0,89 & 0,94 & 0,984 & 0,95 [0,88–0,97] & 0,92 & 2\,042 \\
-ResNet18 & 0,979 & 0,93 & 0,91 & 0,958 & 0,69 [0,28–0,80] & 0,99 & 13\,183 \\
-ResNet18 + HED & 0,985 & 0,88 & \best{0,99} & 0,971 & 0,72 [0,38–0,82] & \best{1,00} & 11\,881 \\
-\rowcolor{bleuclair}\textbf{Phikon figé + sonde} & \best{0,995} & \best{0,98} & 0,95 & \best{0,990} & \best{0,98} [0,95–0,99] & 0,83 & \best{705} \\
+ResNet18 + HED (meilleur CNN) & 0,985 & 0,88 [0,79–0,90] & \best{0,99} & 0,971 & 0,72 [0,38–0,82] & \best{1,00} & 11\,881 \\
+\rowcolor{bleuclair}\textbf{Phikon figé + sonde} & \best{0,995} & \best{0,98} [0,94–0,99] & 0,95 & \best{0,990} & \best{0,98} [0,95–0,99] & 0,83 & \best{705} \\
 \bottomrule
 \end{tabular}
 \caption{Seuil appris sans les hôpitaux 1 et 2 (sensibilité 95\,\%), appliqué tel quel ; 34\,904 patchs (hôpital 1) et 85\,054
-(hôpital 2, dont 42\,527 tumoraux). Sur les hôpitaux d'entraînement (\texttt{val\_id}), les CNN atteignent une AUC de 0,993 à 0,997.}
+(hôpital 2, dont 42\,527 tumoraux).}
 \label{tab:main}
 \end{table}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=\textwidth]{cnn_vs_phikon.png}
-\caption{Comparaison principale. Barres : valeur ; traits : IC 95\,\% par bootstrap des patientes.}
+\includegraphics[width=0.92\textwidth]{cnn_vs_phikon.png}
+\caption{Meilleur CNN contre Phikon. Barres : valeur ; traits : IC 95\,\% par bootstrap des patientes.}
 \label{fig:main}
 \end{figure}
 
+\clearpage
 \begin{constat}[{Phikon l'emporte sur le critère qui compte : détecter les tumeurs d'un hôpital inconnu}]
 \begin{enumerate}
-  \item \textbf{Sensibilité au seuil transféré} : Phikon détecte \textbf{98\,\%} des tumeurs sur \emph{les deux} hôpitaux inconnus.
-        Le ResNet18 tombe à \textbf{69\,\%} sur l'hôpital 2 (13\,183 patchs tumoraux ratés, contre 705 pour Phikon), avec un IC très
-        large (28–80\,\%) : son comportement dépend fortement des patientes.
-  \item \textbf{Un bon AUC ne suffit pas} : le ResNet18 range encore bien les patchs de l'hôpital 2 (AUC 0,958), mais ses probabilités
-        sont décalées vers « non tumoral » ; pour retrouver 95\,\% de sensibilité, il faudrait un seuil de 0,023 au lieu de 0,843.
-  \item \textbf{Entraîner plus longtemps spécialise le CNN} : l'AUC du ResNet18 sur l'hôpital 1 passe de 0,983 (époque 1) à 0,958
-        (époque 3), pendant que \texttt{val\_id} reste à 0,996.
-  \item \textbf{L'augmentation de couleur rapproche le petit CNN de Phikon} sur l'hôpital 2 (95\,\%), mais pas sur l'hôpital 1 (89\,\%),
-        et ne corrige pas le ResNet18 (72\,\%).
-  \item \textbf{Prix de Phikon} : plus de fausses alertes sur l'hôpital 2 (spécificité 0,83 contre 0,99 pour le ResNet18). Pour un outil
-        de tri, c'est le bon compromis (une fausse alerte coûte une relecture, une tumeur ratée peut coûter un traitement).
+  \item \textbf{Sensibilité au seuil transféré} : Phikon détecte \textbf{98\,\%} des tumeurs sur \emph{les deux} hôpitaux inconnus ;
+        le meilleur CNN 88\,\% sur l'hôpital 1 et seulement \textbf{72\,\%} sur l'hôpital 2 (11\,881 patchs tumoraux ratés, contre
+        705), avec un IC très large (38–82\,\%) : son comportement dépend fortement des patientes.
+  \item \textbf{Un bon AUC ne suffit pas} : le CNN range encore bien les patchs de l'hôpital 2 (AUC 0,971), mais ses probabilités y
+        sont décalées vers « non tumoral », si bien que le seuil appris chez nous ne convient plus (même constat sans HED : il
+        faudrait un seuil de 0,023 au lieu de 0,843 pour retrouver 95\,\%).
+  \item \textbf{Prix de Phikon} : plus de fausses alertes sur l'hôpital 2 (spécificité 0,83 contre 1,00). Pour un outil de tri, c'est
+        le bon compromis : une fausse alerte coûte une relecture, une tumeur ratée peut coûter un traitement.
   \item \textbf{Coût} : la sonde Phikon n'apprend que 769 paramètres, en quelques minutes, contre 11\,M pour le ResNet18.
+  \item \textbf{Remarque d'honnêteté} : choisi au vu de l'hôpital 2, le « meilleur » CNN aurait été le petit CNN + HED (95\,\% sur
+        l'hôpital 2) ; mais ce choix regarde le test, et ce modèle reste à 89\,\% sur l'hôpital 1. Aucun des quatre CNN n'atteint
+        95\,\% sur les deux hôpitaux, contrairement à Phikon (détails en section~\ref{sec:hed}).
 \end{enumerate}
 \end{constat}
 
@@ -328,7 +347,9 @@ ResNet18 + HED & 0,985 & 0,88 & \best{0,99} & 0,971 & 0,72 [0,38–0,82] & \best
         n'ajuste qu'une frontière linéaire dans un espace de caractéristiques fixé, ce qui limite ce sur-apprentissage au domaine.
   \item \textbf{Le pré-entraînement doit être en pathologie} : DINOv2, même principe mais appris sur des photos, transfère aussi son
         seuil mais avec plus de fausses alertes (tableau~\ref{tab:fm}) ; le ResNet18, pré-entraîné sur ImageNet puis ré-entraîné
-        entièrement, ne transfère pas.
+        entièrement, ne transfère pas, même avec l'augmentation de couleur.
+  \item \textbf{Entraîner plus longtemps spécialise le CNN} : l'AUC du ResNet18 sans HED sur l'hôpital 1 passe de 0,983 (époque 1)
+        à 0,958 (époque 3) pendant que \texttt{val\_id} reste à 0,996.
 \end{itemize}
 
 \subsection{Modèles complémentaires}\label{sec:fm}
@@ -575,8 +596,9 @@ règle de taille et la chaîne « carte $\to$ diamètre $\to$ règles TNM » son
 \paragraph{Ce que nous retenons.}
 \begin{enumerate}
   \item \textbf{CNN contre Phikon : Phikon l'emporte là où cela compte.} Sur les hôpitaux d'entraînement, les CNN semblent
-        excellents (AUC $\geq$ 0,99) ; sur un hôpital inconnu, le ResNet18 ne détecte plus que 69\,\% des tumeurs, alors que Phikon
-        figé + régression logistique en détecte 98\,\% sur les deux hôpitaux inconnus, en n'apprenant que 769 paramètres.
+        excellents (AUC $\geq$ 0,99) ; sur un hôpital inconnu, même le meilleur CNN (ResNet18 + HED, choisi sur l'hôpital 1) ne détecte plus que 72\,\% des
+        tumeurs de l'hôpital 2, alors que Phikon figé + régression logistique en détecte 98\,\% sur les deux hôpitaux inconnus, en
+        n'apprenant que 769 paramètres.
   \item \textbf{L'AUC ne suffit pas} : il faut évaluer la décision, au seuil réellement utilisable.
   \item \textbf{Deux remèdes au changement de domaine} : changer de représentation (modèles de fondation, le plus efficace) ou
         augmenter la couleur à l'entraînement (efficace pour le petit CNN, insuffisant pour le ResNet18, résultat exploratoire).

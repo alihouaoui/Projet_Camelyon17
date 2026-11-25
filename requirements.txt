@@ -10,3 +10,10 @@ joblib
 matplotlib
 pyyaml
 jupyter
+huggingface_hub
+transformers>=4.56
+fsspec
+aiohttp
+tifffile
+imagecodecs
+nbformat
