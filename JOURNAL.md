@@ -297,3 +297,33 @@ Fichiers : `reports/pn_ensemble_resume.csv`, `reports/pn_ensemble_ecarts.csv`.
 ### Questions pour l'enseignante
 1. Un VAE (visualisation du changement de domaine) est-il bienvenu en complément ?
 2. Le test final sur le centre 2 doit-il rester intouché jusqu'au rapport, comme prévu ?
+
+## Semaine 4 — 25/11/2026 : augmentation de couleur HED, Grad-CAM, rapport final
+
+**Question posée** : une augmentation de couleur (HED-light, Tellez 2019), annoncée en semaine 2, rend-elle les CNN robustes au
+changement d'hôpital ? Plan critiqué par 5 relecteurs avant lancement ; modifications retenues : comparaison **appariée**
+(bootstrap des patientes, mêmes tirages), diagnostic seuil / séparabilité (seuil « oracle »), niveau patiente, statut exploratoire.
+
+**Méthode** : `src/transforms.py:hed_jitter_batch` (HED par lot sur GPU, écart max avec skimage 2e-7) ; mêmes réglages, graine et
+découpage que les runs de référence, seule différence `hed: true` (±5 %, non réglé) ; Colab T4, ~270 s/époque ;
+analyse `scripts/compare_hed.py` → `reports/hed_comparaison.csv`.
+
+| Modèle | Hôpital | AUC réf → HED | Sensibilité réf → HED | Spécificité réf → HED |
+|---|---|---|---|---|
+| Petit CNN | C1 | 0,912 → 0,966 (+0,05 [−0,01 ; 0,22]) | 0,90 → 0,89 | 0,72 → **0,94** (+0,23 [0,16 ; 0,33]) |
+| Petit CNN | C2 | 0,893 → **0,984** (+0,09 [0,04 ; 0,23]) | 0,82 → **0,95** (+0,14 [0,03 ; 0,45]) | 0,79 → **0,92** |
+| ResNet18 | C1 | 0,979 → 0,985 (+0,01 [−0,00 ; 0,03]) | 0,93 → 0,88 | 0,91 → **0,99** |
+| ResNet18 | C2 | 0,958 → 0,971 (+0,01 [0,00 ; 0,06]) | 0,69 → 0,72 (+0,03 [−0,03 ; 0,11]) | 0,99 → 1,00 |
+
+**Constats**
+1. La HED aide nettement le petit CNN (au niveau de DINOv2 sur C2), peu le ResNet18 dont le seuil reste non transférable.
+2. Elle supprime la spécialisation au fil des époques du ResNet18 (AUC C1 0,984 → 0,985 au lieu de 0,983 → 0,958).
+3. Le seuil oracle progresse aussi : meilleure séparabilité, pas seulement un meilleur seuil.
+4. Exploratoire : une graine, val_id de 5 patientes. Seuls les modèles de fondation atteignent ~95 % sur C1 **et** C2.
+
+**Interprétabilité** : `scripts/gradcam.py` (Grad-CAM, layer3) sur C2. Sans HED, les tumeurs ratées les plus franches sont des patchs
+sombres, saturés et flous (carte vide) ; avec HED, ce sont quelques cellules isolées dans la graisse : l'erreur devient morphologique.
+Figures `reports/figures/gradcam_c2_ref.png`, `gradcam_c2_hed.png` ; tableau global mis à jour (`scripts/compare.py`).
+
+**Rapport final** : `docs/rapport_final.tex` / `.pdf` (13 pages) : contexte, données, méthodes, 8 classifieurs + 2 variantes HED,
+stade pN (4 méthodes), changement de domaine, interprétabilité, éthique, limites.

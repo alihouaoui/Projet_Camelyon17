@@ -50,7 +50,27 @@ def eval_transform(size: int = 96):
     return T.Compose(ops + [T.ToTensor(), T.Normalize(IMAGENET_MEAN, IMAGENET_STD)])
 
 
-def gpu_prepare(x: torch.Tensor, train: bool) -> torch.Tensor:
+def hed_jitter_batch(x: torch.Tensor, sigma: float = 0.05) -> torch.Tensor:
+    """HEDJitter par lot sur le GPU (x : float NCHW dans [0, 1]).
+
+    Même calcul que skimage rgb2hed / hed2rgb (déconvolution de Ruifrok), avec un alpha
+    et un beta tirés par image et par canal, comme HEDJitter.
+    """
+    from skimage.color.colorconv import hed_from_rgb, rgb_from_hed
+    n = x.shape[0]
+    to_hed = torch.tensor(hed_from_rgb, dtype=x.dtype, device=x.device)
+    to_rgb = torch.tensor(rgb_from_hed, dtype=x.dtype, device=x.device)
+    log_adjust = float(np.log(1e-6))
+    rgb = x.permute(0, 2, 3, 1).clamp_min(1e-6)                      # NHWC
+    hed = ((rgb.log() / log_adjust) @ to_hed).clamp_min(0)
+    alpha = torch.empty(n, 1, 1, 3, device=x.device, dtype=x.dtype).uniform_(1 - sigma, 1 + sigma)
+    beta = torch.empty(n, 1, 1, 3, device=x.device, dtype=x.dtype).uniform_(-sigma, sigma)
+    hed = hed * alpha + beta
+    rgb = torch.exp(-(hed * -log_adjust) @ to_rgb).clamp(0, 1)
+    return rgb.permute(0, 3, 1, 2).contiguous()
+
+
+def gpu_prepare(x: torch.Tensor, train: bool, hed: bool = False) -> torch.Tensor:
     """Préparation par lot sur le GPU : uint8 NHWC -> float NCHW normalisé.
 
     En entraînement, chaque patch reçoit une symétrie et une rotation de 90° aléatoires
@@ -69,6 +89,8 @@ def gpu_prepare(x: torch.Tensor, train: bool) -> torch.Tensor:
             m = k == r
             if m.any():
                 x[m] = torch.rot90(x[m], r, (2, 3))
+        if hed:
+            x = hed_jitter_batch(x)
     mean = torch.tensor(IMAGENET_MEAN, device=x.device)[None, :, None, None]
     std = torch.tensor(IMAGENET_STD, device=x.device)[None, :, None, None]
     return (x - mean) / std

@@ -16,7 +16,7 @@ step() { echo; echo "=== $(date '+%H:%M:%S') $* ==="; }
 step "dépendances"
 pip install -q scikit-image pyarrow pyyaml joblib
 
-if { want classic || want cnn || want fm; } && [ ! -f "$DATA/metadata.parquet" ]; then
+if { want classic || want cnn || want fm || want hed; } && [ ! -f "$DATA/metadata.parquet" ]; then
   step "téléchargement des 21 parquets (10,7 Go)"
   bash scripts/download_data.sh all /content/raw
   step "conversion en images.npy"
@@ -34,6 +34,13 @@ for run in resnet18 small_cnn; do
   if want cnn && [ ! -f "$OUT/${run}_full/metrics.csv" ]; then
     step "$run"
     python -m scripts.train_cnn --config "configs/$run.yaml" --data "$DATA" --run "${run}_full" --out "$OUT"
+  fi
+done
+# augmentation HED-light (Tellez 2019), mêmes réglages que les runs de référence sauf hed ; ResNet18 d'abord
+for run in resnet18 small_cnn; do
+  if want hed && [ ! -f "$OUT/${run}_hed_full/metrics.csv" ]; then
+    step "$run + HED"
+    python -m scripts.train_cnn --config "configs/$run.yaml" --data "$DATA" --run "${run}_hed_full" --out "$OUT" --hed true
   fi
 done
 # modèles de fondation : du plus rapide au plus lent ; Midnight (ViT-g, ~28 img/s sur T4) sur 100 000 patchs

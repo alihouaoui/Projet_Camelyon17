@@ -113,7 +113,8 @@ def main():
     kw = dict(batch_size=cfg["batch_size"], num_workers=cfg["num_workers"], persistent_workers=cfg["num_workers"] > 0,
               pin_memory=dev.type == "cuda")
     # sans HED ni redimensionnement, les augmentations se font par lot sur le GPU (bien plus rapide)
-    gpu_aug = not cfg["hed"] and cfg["size"] == 96
+    # (la HED est aussi faite par lot sur le GPU : src.transforms.hed_jitter_batch, vérifiée identique à skimage)
+    gpu_aug = cfg["size"] == 96
     train_ds = PatchDataset(tr, None if gpu_aug else train_transform(cfg["hed"], cfg["size"]), images_path)
     counts = np.bincount(train_ds.labels, minlength=2)
     class_w = torch.tensor(len(train_ds.labels) / (2 * np.maximum(counts, 1)), dtype=torch.float32)
@@ -149,7 +150,7 @@ def main():
         for step, (x, y) in enumerate(train_dl):
             x, y = x.to(dev, non_blocking=True), y.to(dev, non_blocking=True)
             if gpu_aug:
-                x = gpu_prepare(x, train=True)
+                x = gpu_prepare(x, train=True, hed=cfg["hed"])
             with autocast(dev):
                 loss = loss_fn(model(x), y)
             opt.zero_grad(set_to_none=True)

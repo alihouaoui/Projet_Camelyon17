@@ -22,6 +22,7 @@ import pandas as pd  # noqa: E402
 from sklearn.metrics import roc_auc_score  # noqa: E402
 
 NAMES = {"classic": "Couleur+texture (RF)", "small_cnn_full": "Petit CNN", "resnet18_full": "ResNet18 fine-tuné",
+         "small_cnn_hed_full": "Petit CNN + HED", "resnet18_hed_full": "ResNet18 + HED",
          "probe_dinov2_base": "DINOv2 générique (figé)", "probe_phikon": "Phikon (figé)",
          "probe_phikon_v2": "Phikon-v2 (figé)", "probe_midnight": "Midnight-12k (figé, 100k)"}
 SPLITS = {"val_ood": "C1", "test_ood": "C2"}
