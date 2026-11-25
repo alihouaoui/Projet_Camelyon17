@@ -42,7 +42,7 @@
 \setlength{\headheight}{14pt}
 
 \title{\vspace{-1.4cm}\textbf{\color{bleu}Détection de métastases ganglionnaires\\et stade pN du cancer du sein (CAMELYON17)}\\[4pt]
-\large Robustesse au changement d'hôpital : des CNN aux modèles de fondation}
+\large CNN classique contre modèle de fondation (Phikon) face au changement d'hôpital}
 \author{Ali Houaoui \;—\; \emph{[noms des autres membres de l'équipe]}}
 \date{Rapport de projet — 26 novembre 2026\\
 \small Code : dépôt GitHub \texttt{alihouaoui/Projet\_Camelyon17} (journal de bord : \texttt{JOURNAL.md})}
@@ -52,19 +52,20 @@
 \thispagestyle{fancy}
 
 \begin{abstract}
-\noindent Nous cherchons à détecter les métastases du cancer du sein sur des lames de ganglions lymphatiques, puis à en déduire le
+\noindent Nous détectons les métastases du cancer du sein sur des lames de ganglions lymphatiques, puis en déduisons le
 \emph{stade pN} de chaque patiente, avec une contrainte centrale : le modèle doit rester fiable dans un \textbf{hôpital qu'il n'a
-jamais vu}. Sur les 455\,954 patchs de Camelyon17-WILDS (5 hôpitaux), découpés par patiente, nous comparons \textbf{huit
-classifieurs} : deux références « couleur + texture », un petit CNN, un ResNet18 pré-entraîné, et quatre modèles de fondation
-figés suivis d'une régression logistique. Le seuil de décision est fixé sur les hôpitaux d'entraînement (sensibilité 95\,\%)
-puis appliqué tel quel. Le ResNet18 classe bien les patchs de l'hôpital de test (AUC 0,958) mais n'y détecte que \textbf{69\,\%} des
-tumeurs ; un modèle de fondation de pathologie (Phikon) atteint une AUC de 0,990 et une sensibilité de \textbf{98\,\%}.
-L'exploration montre pourquoi : la couleur seule identifie l'hôpital dans 80\,\% des cas. Une augmentation de couleur
-(HED) fait passer le petit CNN de 82 à 95\,\% de sensibilité sur l'hôpital de test, mais aide peu le ResNet18. Pour le stade pN de 57 patientes
-jamais vues (285 lames entières lues à distance), nous comparons une règle de taille, une forêt aléatoire et un modèle
-multi-instances à attention (ABMIL) : l'ABMIL hybride atteint un kappa quadratique de \textbf{0,89} contre 0,80 (écart
-+0,08, IC 95\,\% [0,01 ; 0,18]). Les micro-métastases restent le point faible. Nous discutons l'interprétabilité (Grad-CAM,
-cartes de chaleur), le changement de domaine et les enjeux éthiques d'un tel outil.
+jamais vu}. La question principale du rapport est la comparaison de deux approches : un \textbf{réseau de neurones convolutif (CNN)}
+entraîné pour la tâche (petit CNN appris de zéro et ResNet18 pré-entraîné sur ImageNet) et \textbf{Phikon}, un modèle de fondation
+de pathologie (Vision Transformer) utilisé figé, suivi d'une simple régression logistique. Sur les 455\,954 patchs de
+Camelyon17-WILDS (5 hôpitaux), découpés par patiente, le seuil de décision est fixé sur les hôpitaux d'entraînement (sensibilité
+95\,\%) puis appliqué tel quel aux hôpitaux 1 et 2. Les CNN sont excellents chez eux (AUC $\geq$ 0,99) mais, sur l'hôpital de test,
+le ResNet18 ne détecte que \textbf{69\,\%} des tumeurs et le petit CNN 82\,\% ; \textbf{Phikon en détecte 98\,\%} (AUC 0,990) et reste à
+98\,\% sur l'hôpital 1. L'exploration explique cet écart : la couleur seule identifie l'hôpital dans 80\,\% des cas, et les CNN se
+laissent piéger par la coloration. Une augmentation de couleur (HED) rapproche le petit CNN de Phikon (95\,\% sur l'hôpital 2,
+89\,\% sur l'hôpital 1) mais n'aide presque pas le ResNet18. Six autres modèles (références classiques, autres modèles de fondation)
+complètent la comparaison. Avec Phikon, nous estimons enfin le stade pN de 57 patientes jamais vues : un modèle multi-instances à
+attention (ABMIL hybride) atteint un kappa de \textbf{0,89}, contre 0,80 pour une règle de taille et une forêt aléatoire. Nous
+discutons l'interprétabilité (Grad-CAM), le changement de domaine et les enjeux éthiques.
 \end{abstract}
 
 \tableofcontents
@@ -86,11 +87,12 @@ alerte coûte une relecture. Toutes nos métriques et nos choix de seuil découl
 
 \paragraph{Objectifs.}
 \begin{enumerate}
-  \item \textbf{Étape 1 — détection} : classer chaque patch ($96\times96$ pixels) en tumoral / non tumoral, et \textbf{comparer
-        plusieurs familles de modèles}, en mesurant surtout leur comportement sur des \textbf{hôpitaux jamais vus}.
+  \item \textbf{Question principale — CNN ou modèle de fondation ?} Pour classer chaque patch ($96\times96$ pixels) en tumoral /
+        non tumoral, comparer un \textbf{CNN entraîné pour la tâche} à \textbf{Phikon}, un modèle de fondation de pathologie
+        utilisé tel quel, en mesurant surtout leur comportement sur des \textbf{hôpitaux jamais vus}.
   \item \textbf{Étape 2 — stade} : appliquer le meilleur détecteur aux lames entières, en déduire la classe de chaque ganglion
         puis le stade pN, et comparer trois méthodes d'agrégation.
-  \item \textbf{Étape 3 — recul critique} : changement de domaine, interprétabilité, éthique.
+  \item \textbf{Recul critique} : changement de domaine, interprétabilité, éthique.
 \end{enumerate}
 
 \paragraph{Pourquoi CAMELYON17 ?} (i) Tâche clinique réelle avec des règles officielles (on peut construire le stade comme le
@@ -172,26 +174,45 @@ téléchargées : seules les tuiles recouvrant du tissu sont lues par requêtes 
 \section{Méthodes}
 %=====================================================================
 
-\subsection{Étape 1 : huit classifieurs de patchs}
-\begin{description}[style=nextline,leftmargin=0.4cm]
-  \item[Références classiques (2 modèles)] statistiques de couleur et de texture (histogrammes, LBP, co-occurrence) puis
-        \textbf{régression logistique} ou \textbf{forêt aléatoire}. Point de comparaison sans apprentissage profond.
-  \item[Petit CNN (appris de zéro)] 4 blocs \{convolution $3\times3$, normalisation de lot, ReLU, max-pooling $2\times2$\} de largeurs
-        32, 64, 128, 256, puis pooling global, dropout 0,3 et couche linéaire (389\,410 paramètres).
-  \item[ResNet18 pré-entraîné] réseau résiduel de 18 couches (11\,M paramètres) pré-entraîné sur ImageNet ; dernière couche remplacée
-        (2 sorties) et réseau entièrement ré-entraîné (\emph{fine-tuning}).
-  \item[Modèles de fondation figés + sonde linéaire (4 modèles)] un Vision Transformer pré-entraîné par auto-supervision transforme
-        chaque patch (agrandi à $224\times224$) en un vecteur ; une régression logistique décide. \textbf{Phikon} (ViT-B, 86\,M, TCGA),
-        \textbf{Phikon-v2} (ViT-L, TCGA + CPTAC + GTEx), \textbf{Midnight-12k} (ViT-g, TCGA ; 100\,000 patchs par manque de temps de calcul)
-        et, en contrôle, \textbf{DINOv2-base} (photos ordinaires). Aucun n'a vu CAMELYON lors de son pré-entraînement (fiches des modèles).
-\end{description}
+\subsection{Étape 1 : les deux approches comparées}
+\begin{table}[H]
+\centering\footnotesize\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\textwidth}{lXX}
+\toprule
+ & \textbf{CNN (approche 1)} & \textbf{Phikon figé + sonde (approche 2)} \\
+\midrule
+Architecture & réseau convolutif : des filtres $3\times3$ appris glissent sur l'image & Vision Transformer (ViT-B/16) : l'image est
+  découpée en morceaux de $16\times16$ qui s'échangent de l'information par attention \\
+Variantes & \textbf{petit CNN} appris de zéro (4 blocs conv.--BatchNorm--ReLU--max-pooling, largeurs 32 à 256, pooling global,
+  dropout 0,3 ; 389\,k paramètres) ; \textbf{ResNet18} pré-entraîné sur ImageNet (photos ordinaires), 18 couches à connexions
+  résiduelles, 11\,M paramètres & Phikon (Owkin, 2023), 86\,M paramètres, pré-entraîné par \textbf{auto-supervision} (iBOT :
+  reconstituer des parties masquées) sur des millions de tuiles de tissus de nombreux cancers et hôpitaux (TCGA), sans étiquette \\
+Ce qui est appris & \textbf{tout le réseau} (ResNet18 : \emph{fine-tuning} complet) & \textbf{rien dans Phikon} (figé) : il transforme
+  chaque patch, agrandi à $224\times224$, en un vecteur de 768 nombres ; seule une \textbf{régression logistique} (769 paramètres) est apprise \\
+Données vues & les patchs des hôpitaux 0, 3, 4 uniquement & ImageNet n'intervient pas ; Phikon a vu de la pathologie de nombreux
+  hôpitaux, mais jamais CAMELYON (fiche du modèle) \\
+Coût & $\approx$\,250\,s par époque sur GPU T4 & extraction $\approx$\,20\,min (T4), sonde en quelques minutes sur CPU \\
+Choix du seuil & \texttt{val\_id} (5 patientes) & validation croisée groupée par patiente (5 plis) sur les hôpitaux 0, 3, 4 \\
+\bottomrule
+\end{tabularx}
+\caption{Les deux approches de la comparaison principale.}
+\label{tab:approches}
+\end{table}
 
 \paragraph{Entraînement des CNN.} Entropie croisée (non pondérée : classes équilibrées), AdamW (\emph{weight decay} $10^{-4}$),
 calendrier OneCycle, lots de 256 patchs, augmentation par symétries et rotations de 90° (le tissu n'a pas d'orientation),
 normalisation des entrées. Petit CNN : $\mathrm{lr}=10^{-3}$, 5 époques ; ResNet18 : $\mathrm{lr}=3\cdot10^{-4}$, 3 époques.
 L'époque retenue est celle de meilleure AUC sur \texttt{val\_id} ; l'hôpital 2 n'est jamais évalué pendant l'entraînement.
-\textbf{Expérience complémentaire} (section~\ref{sec:hed}) : mêmes réglages avec une augmentation de couleur \emph{HED-light}
-(Tellez et al., 2019).
+Variante : mêmes réglages avec une augmentation de couleur \emph{HED-light} (Tellez et al., 2019, section~\ref{sec:hed}).
+
+\paragraph{Entraînement de la sonde.} Régression logistique régularisée ($\ell_2$) sur les vecteurs Phikon ; la force de
+régularisation et le seuil (sensibilité 95\,\%) sont choisis sur les prédictions hors-pli d'une validation croisée groupée par
+patiente, ce qui corrige la faiblesse de \texttt{val\_id} (dominé par 2 patientes).
+
+\paragraph{Modèles complémentaires.} Pour situer les deux approches : deux \textbf{références classiques} (statistiques de couleur
+et de texture -- histogrammes, LBP, co-occurrence -- puis régression logistique ou forêt aléatoire) et trois autres
+\textbf{modèles de fondation} figés + sonde : \textbf{Phikon-v2} (ViT-L), \textbf{Midnight-12k} (ViT-g, sur 100\,000 patchs faute de
+temps de calcul) et, en contrôle, \textbf{DINOv2-base}, pré-entraîné sur des photos ordinaires.
 
 \subsection{Étape 2 : du patch au stade pN}
 \begin{figure}[H]
@@ -251,96 +272,97 @@ L'époque retenue est celle de meilleure AUC sur \texttt{val\_id} ; l'hôpital 2
 par lot sur le GPU (395 $\to$ 250\,s par époque), lecture partielle des lames à distance.
 
 %=====================================================================
-\section{Résultats — étape 1 : détection sur patchs}
+\section{Résultats — étape 1 : CNN contre Phikon}
 %=====================================================================
 
-\subsection{Références, CNN et ResNet18}
+\subsection{La comparaison principale}
 \begin{table}[H]
-\centering\footnotesize\setlength{\tabcolsep}{4pt}
-\begin{tabular}{lcccccc}
+\centering\footnotesize\setlength{\tabcolsep}{3.2pt}
+\begin{tabular}{l|ccc|ccc|r}
 \toprule
-\textbf{Modèle} & \textbf{AUC val\_id} & \textbf{AUC C1} & \textbf{AUC C2} & \textbf{Sens. C2} & \textbf{Spéc. C2} & \textbf{Ratées C2} \\
+ & \multicolumn{3}{c|}{\textbf{Hôpital 1 (inconnu, 8 patientes)}} & \multicolumn{3}{c|}{\textbf{Hôpital 2 (test, 9 patientes)}} & \\
+\textbf{Modèle} & \textbf{AUC} & \textbf{Sens.} & \textbf{Spéc.} & \textbf{AUC} & \textbf{Sens. [IC 95\,\%]} & \textbf{Spéc.} & \textbf{Ratées C2} \\
 \midrule
-Couleur + texture, rég. log. & 0,973 & 0,838 & 0,660 & 0,63 & 0,62 & 37\,\% \\
-Couleur + texture, forêt & 0,965 & 0,901 & 0,896 & \best{0,99} & 0,36 & 1\,\% \\
-Petit CNN (5 époques) & 0,993 & 0,912 & 0,893 & 0,82 & 0,79 & 18\,\% \\
-ResNet18 (3 époques) & \best{0,997} & \best{0,979} & \best{0,958} & 0,69 & \best{0,99} & 31\,\% \\
+Petit CNN & 0,912 & 0,90 & 0,72 & 0,893 & 0,82 [0,48–0,92] & 0,79 & 7\,808 \\
+Petit CNN + HED & 0,966 & 0,89 & 0,94 & 0,984 & 0,95 [0,88–0,97] & 0,92 & 2\,042 \\
+ResNet18 & 0,979 & 0,93 & 0,91 & 0,958 & 0,69 [0,28–0,80] & 0,99 & 13\,183 \\
+ResNet18 + HED & 0,985 & 0,88 & \best{0,99} & 0,971 & 0,72 [0,38–0,82] & \best{1,00} & 11\,881 \\
+\rowcolor{bleuclair}\textbf{Phikon figé + sonde} & \best{0,995} & \best{0,98} & 0,95 & \best{0,990} & \best{0,98} [0,95–0,99] & 0,83 & \best{705} \\
 \bottomrule
 \end{tabular}
-\caption{Jeu complet. Seuil fixé sur \texttt{val\_id} (sensibilité 95\,\%) puis appliqué tel quel. Références classiques entraînées
-sur 30\,000 patchs et évaluées sur 20\,000 patchs par ensemble.}
-\label{tab:cnn}
-\end{table}
-
-\begin{constat}[Un bon AUC ne suffit pas]
-Le ResNet18 range le mieux les patchs de l'hôpital 2 (AUC 0,958) mais, au seuil appris ailleurs, il \textbf{rate 31\,\% des tumeurs}
-(13\,183 sur 42\,527). Pour retrouver 95\,\% de sensibilité sur cet hôpital, il faudrait un seuil de 0,023 au lieu de 0,843 : ses
-probabilités sont décalées vers « non tumoral ». Les modèles « couleur » ne transfèrent pas (régression logistique : AUC 0,66) ;
-la forêt garde la sensibilité au prix de 64\,\% de fausses alertes. Enfin, \textbf{entraîner plus longtemps spécialise} : l'AUC du
-ResNet18 sur l'hôpital 1 passe de 0,983 (époque 1) à 0,958 (époque 3) pendant que \texttt{val\_id} reste à 0,996.
-\end{constat}
-
-\subsection{Modèles de fondation figés}\label{sec:fm}
-\begin{table}[H]
-\centering\footnotesize\setlength{\tabcolsep}{4pt}
-\begin{tabular}{lcccr}
-\toprule
-\textbf{Modèle (hôpital 2, 9 patientes)} & \textbf{AUC [IC 95\,\%]} & \textbf{Sensibilité [IC 95\,\%]} & \textbf{Spécificité} & \textbf{Tumeurs ratées} \\
-\midrule
-Petit CNN & 0,893 [0,74–0,94] & 0,82 [0,48–0,92] & 0,79 & 7\,808 \\
-ResNet18 fine-tuné & 0,958 [0,89–0,98] & 0,69 [0,28–0,80] & 0,99 & 13\,183 \\
-DINOv2 générique, figé & 0,977 [0,95–0,98] & 0,96 [0,90–0,97] & 0,86 & 1\,792 \\
-\rowcolor{bleuclair}\textbf{Phikon, figé} & 0,990 [0,97–0,99] & \best{0,98} [0,95–0,99] & 0,83 & 705 \\
-Phikon-v2, figé & 0,989 [0,96–1,00] & 0,97 [0,90–0,99] & 0,95 & 1\,322 \\
-Midnight-12k, figé (100\,k patchs) & \best{0,996} [0,99–1,00] & 0,96 [0,90–0,98] & \best{1,00} & 391 / 18\,655 \\
-\bottomrule
-\end{tabular}
-\caption{Hôpital de test. Sondes : régularisation et seuil choisis par validation croisée groupée par patiente sur les hôpitaux
-0, 3, 4. Sur l'hôpital 1, les sondes de pathologie donnent aussi une sensibilité de 0,95 à 0,98.}
-\label{tab:fm}
+\caption{Seuil appris sans les hôpitaux 1 et 2 (sensibilité 95\,\%), appliqué tel quel ; 34\,904 patchs (hôpital 1) et 85\,054
+(hôpital 2, dont 42\,527 tumoraux). Sur les hôpitaux d'entraînement (\texttt{val\_id}), les CNN atteignent une AUC de 0,993 à 0,997.}
+\label{tab:main}
 \end{table}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.74\textwidth]{sensibilite_c2.png}
-\caption{Sensibilité sur l'hôpital 2 au seuil appris sans les hôpitaux 1 et 2 (IC 95\,\% par bootstrap des patientes).}
-\label{fig:sens}
+\includegraphics[width=\textwidth]{cnn_vs_phikon.png}
+\caption{Comparaison principale. Barres : valeur ; traits : IC 95\,\% par bootstrap des patientes.}
+\label{fig:main}
 \end{figure}
 
-\begin{constat}[{Avec un modèle de pathologie, le seuil se transfère}]
+\begin{constat}[{Phikon l'emporte sur le critère qui compte : détecter les tumeurs d'un hôpital inconnu}]
 \begin{enumerate}
-  \item Réglé à 95\,\% sur les hôpitaux d'entraînement, le seuil des sondes donne \textbf{95 à 98\,\%} de sensibilité sur les deux
-        hôpitaux inconnus ; le ResNet18 tombe à 69\,\%, avec un IC très large (28–80\,\%) : son comportement dépend des patientes.
-  \item Une simple régression logistique sur des caractéristiques \emph{figées} bat un ResNet18 entraîné de bout en bout.
-  \item Le pré-entraînement \emph{en pathologie} compte : DINOv2 (photos) transfère aussi son seuil, mais avec plus de fausses alertes.
-  \item Phikon, Phikon-v2 et Midnight ont des IC qui se chevauchent : pas de vainqueur net. \textbf{Phikon est retenu} pour l'étape 2,
-        car il est le plus rapide (3 millions de tuiles à encoder) ; Midnight offre le meilleur compromis (quasi aucune fausse alerte).
+  \item \textbf{Sensibilité au seuil transféré} : Phikon détecte \textbf{98\,\%} des tumeurs sur \emph{les deux} hôpitaux inconnus.
+        Le ResNet18 tombe à \textbf{69\,\%} sur l'hôpital 2 (13\,183 patchs tumoraux ratés, contre 705 pour Phikon), avec un IC très
+        large (28–80\,\%) : son comportement dépend fortement des patientes.
+  \item \textbf{Un bon AUC ne suffit pas} : le ResNet18 range encore bien les patchs de l'hôpital 2 (AUC 0,958), mais ses probabilités
+        sont décalées vers « non tumoral » ; pour retrouver 95\,\% de sensibilité, il faudrait un seuil de 0,023 au lieu de 0,843.
+  \item \textbf{Entraîner plus longtemps spécialise le CNN} : l'AUC du ResNet18 sur l'hôpital 1 passe de 0,983 (époque 1) à 0,958
+        (époque 3), pendant que \texttt{val\_id} reste à 0,996.
+  \item \textbf{L'augmentation de couleur rapproche le petit CNN de Phikon} sur l'hôpital 2 (95\,\%), mais pas sur l'hôpital 1 (89\,\%),
+        et ne corrige pas le ResNet18 (72\,\%).
+  \item \textbf{Prix de Phikon} : plus de fausses alertes sur l'hôpital 2 (spécificité 0,83 contre 0,99 pour le ResNet18). Pour un outil
+        de tri, c'est le bon compromis (une fausse alerte coûte une relecture, une tumeur ratée peut coûter un traitement).
+  \item \textbf{Coût} : la sonde Phikon n'apprend que 769 paramètres, en quelques minutes, contre 11\,M pour le ResNet18.
 \end{enumerate}
 \end{constat}
 
-\subsection{Synthèse de la comparaison des modèles de détection}
+\subsection{Pourquoi Phikon transfère mieux}
+\begin{itemize}
+  \item \textbf{Ce que chaque modèle a vu} : les CNN n'ont appris qu'à partir de 3 hôpitaux, dont ils intègrent la coloration ; or
+        la couleur seule identifie l'hôpital dans 80\,\% des cas. Phikon a été pré-entraîné sur des tissus de nombreux hôpitaux : il a
+        déjà vu une grande variété de colorations, et ses caractéristiques décrivent davantage la morphologie que la teinte.
+  \item \textbf{Ce qui est appris sur nos données} : le CNN ajuste des millions de poids sur 3 hôpitaux et peut s'y spécialiser ; la sonde
+        n'ajuste qu'une frontière linéaire dans un espace de caractéristiques fixé, ce qui limite ce sur-apprentissage au domaine.
+  \item \textbf{Le pré-entraînement doit être en pathologie} : DINOv2, même principe mais appris sur des photos, transfère aussi son
+        seuil mais avec plus de fausses alertes (tableau~\ref{tab:fm}) ; le ResNet18, pré-entraîné sur ImageNet puis ré-entraîné
+        entièrement, ne transfère pas.
+\end{itemize}
+
+\subsection{Modèles complémentaires}\label{sec:fm}
 \begin{table}[H]
-\centering\footnotesize\setlength{\tabcolsep}{3.5pt}
-\begin{tabularx}{\textwidth}{lllccX}
+\centering\footnotesize\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{lcccr}
 \toprule
-\textbf{Famille} & \textbf{Modèle} & \textbf{Paramètres appris} & \textbf{AUC C2} & \textbf{Sens. C2} & \textbf{Verdict} \\
+\textbf{Modèle (hôpital 2)} & \textbf{AUC [IC 95\,\%]} & \textbf{Sensibilité [IC 95\,\%]} & \textbf{Spécificité} & \textbf{Tumeurs ratées} \\
 \midrule
-Classique & Rég. logistique couleur + texture & quelques centaines & 0,660 & 0,63 & s'appuie sur la couleur : ne transfère pas \\
-Classique & Forêt aléatoire couleur + texture & 300 arbres & 0,896 & 0,99 & sensible mais 64\,\% de fausses alertes \\
-CNN & Petit CNN (de zéro) & 389\,k & 0,893 & 0,82 & simple, mais rangement moyen hors domaine \\
-CNN & ResNet18 (ImageNet, fine-tuné) & 11\,M & 0,958 & 0,69 & bon rangement, seuil non transférable \\
-CNN & Petit CNN + HED-light & 389\,k & 0,984 & 0,95 & \textbf{gain net} de l'augmentation de couleur \\
-CNN & ResNet18 + HED-light & 11\,M & 0,971 & 0,72 & seuil toujours non transférable \\
-Fondation & DINOv2-base figé + sonde & 769 (sonde) & 0,977 & 0,96 & transfère, plus de fausses alertes \\
-Fondation & \textbf{Phikon figé + sonde} & 769 (sonde) & 0,990 & \best{0,98} & \textbf{retenu} : robuste et rapide \\
-Fondation & Phikon-v2 figé + sonde & 1\,025 (sonde) & 0,989 & 0,97 & équivalent, plus lent \\
-Fondation & Midnight-12k figé + sonde & $\approx$\,3\,k (sonde) & \best{0,996} & 0,96 & meilleur compromis, très lent \\
+Couleur + texture, rég. logistique & 0,660 & 0,63 & 0,62 & 37\,\% \\
+Couleur + texture, forêt aléatoire & 0,896 & 0,99 & 0,36 & 1\,\% \\
+DINOv2 générique, figé + sonde & 0,977 [0,95–0,98] & 0,96 [0,90–0,97] & 0,86 & 1\,792 \\
+Phikon-v2, figé + sonde & 0,989 [0,96–1,00] & 0,97 [0,90–0,99] & 0,95 & 1\,322 \\
+Midnight-12k, figé + sonde (100\,k patchs) & \best{0,996} [0,99–1,00] & 0,96 [0,90–0,98] & \best{1,00} & 391 / 18\,655 \\
 \bottomrule
-\end{tabularx}
-\caption{Les huit classifieurs comparés sur l'hôpital de test, plus deux variantes avec augmentation de couleur (section~\ref{sec:hed}). Les modèles de fondation (86\,M à plus d'un milliard de paramètres)
-restent figés : seule la régression logistique est apprise.}
-\label{tab:synthese}
+\end{tabular}
+\caption{Références classiques (entraînées sur 30\,000 patchs, évaluées sur 20\,000 par ensemble) et autres modèles de fondation.}
+\label{tab:fm}
 \end{table}
+
+\noindent Les modèles « couleur » ne transfèrent pas (régression logistique : AUC 0,66) ; la forêt garde la sensibilité au prix de
+64\,\% de fausses alertes. Phikon, Phikon-v2 et Midnight ont des IC qui se chevauchent : pas de vainqueur net entre modèles de
+fondation. \textbf{Phikon est retenu pour l'étape 2}, car il est le plus rapide (3 millions de tuiles à encoder) ; Midnight offre le
+meilleur compromis mais est environ 10 fois plus lent.
+
+\subsection{Synthèse}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.70\textwidth]{sensibilite_c2.png}
+\caption{Sensibilité sur l'hôpital 2 au seuil appris ailleurs, pour tous les modèles évalués avec IC (les références classiques,
+évaluées sur un sous-échantillon, n'y figurent pas).}
+\label{fig:sens}
+\end{figure}
+
 
 %=====================================================================
 \section{Résultats — étape 2 : stade pN de 57 patientes}
@@ -423,7 +445,7 @@ C2 0,53 / 0,68 ; C3 0,92 / 0,79 ; C4 0,92 / 0,86. L'hôpital 2, le plus violet, 
 chiffres reposent sur une dizaine de patientes et sont très instables : ils indiquent une tendance, pas une conclusion.
 
 \subsection{Deux remèdes testés}\label{sec:hed}
-\paragraph{(1) Changer de représentation : modèles de fondation.} C'est le remède le plus efficace (tableau~\ref{tab:fm}) : un
+\paragraph{(1) Changer de représentation : modèles de fondation.} C'est le remède le plus efficace (tableau~\ref{tab:main}) : un
 encodeur pré-entraîné sur des millions de patchs de nombreux hôpitaux a déjà vu une grande variété de colorations.
 
 \paragraph{(2) Augmentation de couleur HED-light (exploratoire).}
@@ -552,8 +574,9 @@ règle de taille et la chaîne « carte $\to$ diamètre $\to$ règles TNM » son
 
 \paragraph{Ce que nous retenons.}
 \begin{enumerate}
-  \item \textbf{Comparer les modèles sur un hôpital jamais vu change le classement.} Sur les hôpitaux d'entraînement, tous les CNN
-        semblent excellents ; sur un hôpital inconnu, seul un encodeur pré-entraîné en pathologie garde une sensibilité proche de 95\,\%.
+  \item \textbf{CNN contre Phikon : Phikon l'emporte là où cela compte.} Sur les hôpitaux d'entraînement, les CNN semblent
+        excellents (AUC $\geq$ 0,99) ; sur un hôpital inconnu, le ResNet18 ne détecte plus que 69\,\% des tumeurs, alors que Phikon
+        figé + régression logistique en détecte 98\,\% sur les deux hôpitaux inconnus, en n'apprenant que 769 paramètres.
   \item \textbf{L'AUC ne suffit pas} : il faut évaluer la décision, au seuil réellement utilisable.
   \item \textbf{Deux remèdes au changement de domaine} : changer de représentation (modèles de fondation, le plus efficace) ou
         augmenter la couleur à l'entraînement (efficace pour le petit CNN, insuffisant pour le ResNet18, résultat exploratoire).
