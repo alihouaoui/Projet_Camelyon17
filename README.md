@@ -4,7 +4,7 @@
 
 Équipe : Ali Houaoui · Benjamin Gardet · Mathys Vrillon · Rayan Abdoulkader Houmed
 
-📄 Rapport : [`docs/rapport_final.pdf`](docs/rapport_final.pdf) · 📘 Guide d'équipe : [`docs/guide_equipe.pdf`](docs/guide_equipe.pdf) · 📓 Journal de bord : [`JOURNAL.md`](JOURNAL.md)
+📄 Rapport : [`docs/rapport_final.pdf`](docs/rapport_final.pdf) · 📓 Journal de bord : [`JOURNAL.md`](JOURNAL.md)
 
 ---
 
@@ -57,7 +57,7 @@ Projet_Camelyon17/
 │   ├── 02_colab.ipynb               chaîne complète sur Google Colab
 │   └── 03_colab_cnn_explique.ipynb  notebook pédagogique autonome (données + CNN)
 ├── reports/                 tableaux de résultats (CSV) et figures du rapport
-├── docs/                    rapport final, guide d'équipe, documents de suivi (LaTeX + PDF)
+├── docs/                    rapport final et documents de suivi (LaTeX + PDF)
 ├── JOURNAL.md               décisions et résultats, séance par séance
 └── requirements.txt
 ```
@@ -195,13 +195,11 @@ Les documents sont écrits en LaTeX et utilisent les figures de `reports/figures
 ```bash
 cd docs
 pdflatex rapport_final.tex && pdflatex rapport_final.tex     # 2 passes pour la table des matières
-pdflatex guide_equipe.tex  && pdflatex guide_equipe.tex
 ```
 
 | Document | Contenu |
 |---|---|
 | `docs/rapport_final.pdf` | **le rapport rendu** (14 pages) |
-| `docs/guide_equipe.pdf` | le projet expliqué pas à pas pour l'équipe, plan de l'oral, questions probables |
 | `docs/colab_cnn_explique.pdf` | explication détaillée du notebook Colab pédagogique |
 | `docs/point_avancement.pdf` | point d'avancement de mi-projet |
 
@@ -254,7 +252,7 @@ Structure du rapport : 1. contexte et objectifs · 2. données · 3. méthodes �
 | 01–02/11 | ABMIL hybride, ensemble de graines, combinaisons | semaine 2 |
 | 05/11 | Point d'avancement pour l'équipe | `docs/point_avancement.pdf` |
 | 12–13/11 | Notebook pédagogique, suivi avec l'enseignante | `notebooks/03_colab_cnn_explique.ipynb` |
-| 25/11 | Augmentation HED, Grad-CAM, rapport final, guide d'équipe | semaine 4 |
+| 25/11 | Augmentation HED, Grad-CAM, rapport final | semaine 4 |
 
 ---
 
