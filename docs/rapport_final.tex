@@ -195,9 +195,23 @@ Coût & $\approx$\,250\,s par époque sur GPU T4 & extraction $\approx$\,20\,min
 Choix du seuil & \texttt{val\_id} (5 patientes) & validation croisée groupée par patiente (5 plis) sur les hôpitaux 0, 3, 4 \\
 \bottomrule
 \end{tabularx}
-\caption{Les deux approches de la comparaison principale.}
+\caption{Les deux approches de la comparaison principale (schémas : figure~\ref{fig:archis}).}
 \label{tab:approches}
 \end{table}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\textwidth]{archi_cnn.png}\\[2pt]
+{\small (a) ResNet18 : chaque étage réduit l'image et augmente le nombre de filtres ; les raccourcis (pointillés) ajoutent
+l'entrée à la sortie de chaque bloc. Ci-dessous, un bloc résiduel (2 par étage).}\\[4pt]
+\includegraphics[width=0.62\textwidth]{archi_bloc.png}\\[8pt]
+\includegraphics[width=\textwidth]{archi_phikon.png}\\[2pt]
+{\small (b) Phikon (ViT-B/16) : le patch est découpé en carrés qui deviennent des jetons ; l'encodeur (12 blocs attention + MLP)
+reste figé et seul le vecteur du jeton CLS alimente la régression logistique.}
+\caption{Architecture des deux approches comparées : tout le ResNet18 est ré-entraîné (11\,M paramètres), alors que seuls
+les 769 paramètres de la sonde sont appris au-dessus de Phikon.}
+\label{fig:archis}
+\end{figure}
 
 \paragraph{Entraînement des CNN.} Entropie croisée (non pondérée : classes équilibrées), AdamW (\emph{weight decay} $10^{-4}$),
 calendrier OneCycle, lots de 256 patchs, augmentation par symétries et rotations de 90° (le tissu n'a pas d'orientation),
@@ -244,8 +258,16 @@ temps de calcul) et, en contrôle, \textbf{DINOv2-base}, pré-entraîné sur des
   \item[(c) ABMIL] apprentissage multi-instances à attention à porte (Ilse et al., 2018) : une lame est un « sac » de vecteurs Phikon,
         $z=\sum_k a_k h_k$ avec des poids d'attention $a_k$ appris ($\approx$\,110\,k paramètres). L'attention fait une moyenne pondérée et
         ne mesure pas une taille : le \textbf{modèle principal, fixé avant les résultats, est un ABMIL hybride} qui décide seulement
-        « ganglion atteint ou non », la taille venant de la règle (a). Variante secondaire : ABMIL à 3 classes.
+        « ganglion atteint ou non », la taille venant de la règle (a). Variante secondaire : ABMIL à 3 classes. Schéma : figure~\ref{fig:abmil}.
 \end{description}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{archi_abmil.png}
+\caption{ABMIL hybride : Phikon figé décrit chaque tuile ($h_k$), l'attention donne un poids $a_k$ à chaque tuile (plus gros pour
+les tuiles tumorales), la somme pondérée $z$ décide si le ganglion est atteint, puis la règle de taille donne ITC, micro ou macro.}
+\label{fig:abmil}
+\end{figure}
 
 \subsection{Métriques et protocole d'évaluation}
 \begin{itemize}
@@ -320,7 +342,6 @@ ResNet18 + HED (meilleur CNN) & 0,985 & 0,88 [0,79–0,90] & \best{0,99} & 0,971
 \label{fig:main}
 \end{figure}
 
-\clearpage
 \begin{constat}[{Phikon l'emporte sur le critère qui compte : détecter les tumeurs d'un hôpital inconnu}]
 \begin{enumerate}
   \item \textbf{Sensibilité au seuil transféré} : Phikon détecte \textbf{98\,\%} des tumeurs sur \emph{les deux} hôpitaux inconnus ;
